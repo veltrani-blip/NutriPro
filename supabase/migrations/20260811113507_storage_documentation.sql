@@ -1,0 +1,4 @@
+-- Run after creating private buckets through Supabase Storage UI/CLI:
+-- patient-documents, evolution-photos, professional-assets
+-- Keep all buckets PRIVATE. Signed URLs should be short lived.
+-- Object path convention: <organization_id>/<patient_id>/<uuid>.<ext>
