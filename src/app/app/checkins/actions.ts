@@ -1,0 +1,8 @@
+'use server'
+import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
+import { z } from 'zod'
+import { requirePermission } from '@/lib/auth'
+const go=(key:'message'|'error',message:string):never=>redirect(`/app/checkins?${key}=${encodeURIComponent(message)}`)
+export async function createCheckinTemplate(formData:FormData){const {supabase,organizationId}=await requirePermission('clinical.write');const frequency=z.enum(['weekly','biweekly','custom']).parse(formData.get('frequency'));const {error}=await supabase.from('checkin_templates').insert({organization_id:organizationId,name:z.string().trim().min(2).max(120).parse(formData.get('name')),frequency,interval_days:frequency==='custom'?z.coerce.number().int().min(1).max(365).parse(formData.get('interval_days')):frequency==='weekly'?7:14,include_weight:formData.get('include_weight')==='on',include_hunger:true,include_satiety:true,include_energy:true,include_sleep:true,include_training:true,include_adherence:true,include_difficulties:true,include_comments:true});if(error)go('error','Não foi possível criar o modelo.');revalidatePath('/app/checkins');go('message','Modelo de check-in criado.')}
+export async function assignCheckin(formData:FormData){const {supabase,organizationId}=await requirePermission('clinical.write');const {error}=await supabase.from('checkin_requests').insert({organization_id:organizationId,patient_id:z.string().uuid().parse(formData.get('patient_id')),template_id:z.string().uuid().parse(formData.get('template_id')),due_at:new Date(String(formData.get('due_at'))).toISOString()});if(error)go('error','Não foi possível atribuir o check-in.');revalidatePath('/app/checkins');go('message','Check-in atribuído ao portal do paciente.')}

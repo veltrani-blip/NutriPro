@@ -1,0 +1,2 @@
+'use client'
+export default function ErrorPage({reset}:{error:Error;reset:()=>void}){return <main className="grid min-h-[60vh] place-items-center p-6"><div className="np-card max-w-lg p-7 text-center"><h2 className="text-xl font-black">Algo não saiu como esperado</h2><p className="mt-2 text-sm text-[#607269]">O erro foi contido para não expor detalhes internos. Tente novamente.</p><button className="np-button mt-5" onClick={reset}>Tentar novamente</button></div></main>}

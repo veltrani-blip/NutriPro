@@ -1,0 +1,16 @@
+import { EmptyPanel, PageHeader } from '@/components/module-ui'
+import { requirePatientPortal } from '@/lib/auth'
+
+type SnapshotMeal = { id?: string; title?: string; meal_time?: string | null; items?: Array<{ id?: string; description?: string; quantity?: number | null; unit?: string | null; notes?: string | null; substitutions?: Array<{id?:string;description?:string;quantity?:number|null;unit?:string|null}> }> }
+type Snapshot = { plan?: { title?: string; notes?: string | null }; meals?: SnapshotMeal[] }
+
+export default async function PortalPlans() {
+  const { supabase, organizationId, patientId } = await requirePatientPortal()
+  const [{ data: versions }, { data: guidance }] = await Promise.all([
+    supabase.from('nutrition_plan_versions').select('*').eq('organization_id',organizationId).eq('patient_id',patientId).order('published_at',{ascending:false}),
+    supabase.from('patient_guidance').select('*,guidance_library(title,content,category)').eq('organization_id',organizationId).eq('patient_id',patientId).eq('released_to_patient',true).order('created_at',{ascending:false}),
+  ])
+  const latestByPlan = new Map<string, NonNullable<typeof versions>[number]>()
+  for (const version of versions ?? []) if (!latestByPlan.has(version.nutrition_plan_id)) latestByPlan.set(version.nutrition_plan_id,version)
+  return <div><PageHeader eyebrow="Acompanhamento" title="Planos e orientações" description="Somente versões publicadas pela sua equipe aparecem aqui."/><div className="mt-7 grid gap-6">{latestByPlan.size ? [...latestByPlan.values()].map((version) => { const snapshot = version.snapshot as Snapshot; return <article className="np-card p-6" key={version.id}><div className="flex flex-wrap justify-between gap-3"><div><h2 className="text-xl font-black">{snapshot.plan?.title || 'Plano alimentar'}</h2><p className="mt-1 text-sm text-[#607269]">Versão {version.version} · publicada em {new Date(version.published_at).toLocaleDateString('pt-BR')}</p></div><span className="np-badge">Publicado</span></div>{snapshot.plan?.notes && <p className="mt-4 rounded-xl bg-[#f7faf8] p-4 text-sm">{snapshot.plan.notes}</p>}<div className="mt-5 grid gap-4">{snapshot.meals?.map((meal,index) => <section className="rounded-2xl border border-[#e1ebe5] p-4" key={meal.id ?? index}><h3 className="font-bold">{meal.title || 'Refeição'} {meal.meal_time && <span className="text-sm font-normal text-[#607269]">· {meal.meal_time.slice(0,5)}</span>}</h3><div className="mt-3 grid gap-2">{meal.items?.map((item,itemIndex) => <div className="text-sm" key={item.id ?? itemIndex}><span className="font-bold">{item.quantity ?? ''} {item.unit ?? ''} {item.description}</span>{item.notes && <span className="text-[#607269]"> · {item.notes}</span>}{item.substitutions?.map((sub,subIndex) => <div className="ml-4 mt-1 text-xs text-[#607269]" key={sub.id ?? subIndex}>ou {sub.quantity ?? ''} {sub.unit ?? ''} {sub.description}</div>)}</div>)}</div></section>)}</div></article> }) : <EmptyPanel>Nenhum plano publicado para você.</EmptyPanel>}{guidance?.map((item) => <article className="np-card p-6" key={item.id}><span className="np-badge">{item.guidance_library?.category ?? 'Orientação'}</span><h2 className="mt-3 font-bold">{item.guidance_library?.title}</h2><p className="mt-3 whitespace-pre-wrap text-sm leading-6">{item.guidance_library?.content}</p></article>)}</div></div>
+}

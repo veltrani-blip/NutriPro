@@ -1,0 +1,10 @@
+'use server'
+import { createHash,randomBytes } from 'node:crypto'
+import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
+import { z } from 'zod'
+import { requirePermission } from '@/lib/auth'
+
+const go=(patientId:string,key:'message'|'error',message:string,invite?:string):never=>redirect(`/app/pacientes/${patientId}?${key}=${encodeURIComponent(message)}${invite?`&invite=${encodeURIComponent(invite)}`:''}`)
+export async function createPortalInvitation(patientId:string,formData:FormData){const {supabase,organizationId,user}=await requirePermission('patient.write');const email=z.string().trim().toLowerCase().email().parse(formData.get('email'));const {data:patient}=await supabase.from('patients').select('id').eq('organization_id',organizationId).eq('id',patientId).maybeSingle();if(!patient)go(patientId,'error','Paciente não encontrado.');const token=randomBytes(32).toString('base64url');const {error}=await supabase.from('patient_portal_invitations').insert({organization_id:organizationId,patient_id:patientId,email,token_hash:createHash('sha256').update(token).digest('hex'),invited_by:user.id,expires_at:new Date(Date.now()+7*86400000).toISOString()});if(error)go(patientId,'error','Não foi possível gerar o convite. Verifique se já existe um convite pendente.');const origin=process.env.NEXT_PUBLIC_APP_URL??'http://localhost:3000';revalidatePath(`/app/pacientes/${patientId}`);go(patientId,'message','Convite do portal criado. Copie o link abaixo.',`${origin}/convites/portal/${token}`)}
+export async function revokePortalLink(patientId:string,userId:string){const {supabase,organizationId}=await requirePermission('patient.write');const {error}=await supabase.from('patient_user_links').update({active:false,revoked_at:new Date().toISOString()}).eq('organization_id',organizationId).eq('patient_id',patientId).eq('user_id',userId);if(error)go(patientId,'error','Não foi possível revogar o acesso.');revalidatePath(`/app/pacientes/${patientId}`);go(patientId,'message','Acesso ao portal revogado.')}

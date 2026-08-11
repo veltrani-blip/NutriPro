@@ -1,0 +1,17 @@
+import Link from 'next/link'
+import { BarChart3, Bell, BookOpen, CalendarDays, CheckSquare, ClipboardList, FileText, LayoutDashboard, LogOut, Search, Settings, Soup, Users, Utensils, WalletCards } from 'lucide-react'
+import { Logo } from '@/components/logo'
+import { signOut } from '@/app/actions'
+
+const nav = [
+  ['/app/dashboard','Visão geral',LayoutDashboard,null], ['/app/agenda','Agenda',CalendarDays,'agenda.read'], ['/app/pacientes','Pacientes',Users,'patient.read'],
+  ['/app/planos','Planos',ClipboardList,'clinical.read'], ['/app/alimentos','Alimentos',Soup,'clinical.read'], ['/app/receitas','Receitas',Utensils,'clinical.read'],
+  ['/app/orientacoes','Orientações',BookOpen,'clinical.read'], ['/app/questionarios','Questionários',FileText,'clinical.read'], ['/app/checkins','Check-ins',ClipboardList,'clinical.read'], ['/app/documentos','Documentos',FileText,'documents.read'],
+  ['/app/financeiro','Financeiro',WalletCards,'finance.read'], ['/app/relatorios','Relatórios',BarChart3,'reports.read'], ['/app/crm','CRM',Users,'patient.read'], ['/app/tarefas','Tarefas',CheckSquare,'patient.read'], ['/app/notificacoes','Notificações',Bell,null], ['/app/configuracoes','Configurações',Settings,null],
+] as const
+
+export function AppShell({ children, professionalName, organizationName, allowedPermissions }: { children:React.ReactNode; professionalName:string; organizationName:string; allowedPermissions:string[] }) {
+  const visibleNav=nav.filter(([, , ,permission])=>!permission||allowedPermissions.includes(permission))
+  const mobile=visibleNav.slice(0,5)
+  return <div className="min-h-screen lg:grid lg:grid-cols-[250px_1fr]"><aside className="hidden max-h-screen overflow-y-auto border-r border-[#dfe9e3] bg-white p-5 lg:flex lg:flex-col"><Logo/><nav className="mt-7 grid gap-1">{visibleNav.map(([href,label,Icon])=><Link key={href} href={href} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-[#40564b] hover:bg-[#f2f7f4]"><Icon size={17}/>{label}</Link>)}</nav><div className="mt-7 border-t border-[#edf2ef] pt-4"><div className="mb-3 px-2"><div className="truncate text-sm font-bold">{professionalName}</div><div className="truncate text-xs text-[#718179]">{organizationName}</div></div><form action={signOut}><button className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-[#607269] hover:bg-[#f7f2f2]"><LogOut size={17}/>Sair</button></form></div></aside><div className="min-w-0"><header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-4 border-b border-[#dfe9e3] bg-white/95 px-5 backdrop-blur lg:px-8"><div className="lg:hidden"><Logo compact/></div><form action="/app/busca" className="hidden w-full max-w-md items-center gap-2 rounded-xl border border-[#dfe9e3] bg-[#f9fbfa] px-3 text-sm text-[#718179] md:flex"><Search size={16}/><input className="w-full bg-transparent py-2 outline-none" name="q" placeholder="Buscar paciente, consulta ou documento" minLength={2}/></form><Link href="/app/notificacoes" className="whitespace-nowrap rounded-full bg-[#e6f5ee] px-3 py-1.5 text-xs font-bold text-[#0b5038]">Ambiente protegido</Link></header><main className="p-5 lg:p-8">{children}</main><nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[#dfe9e3] bg-white p-2 lg:hidden">{mobile.map(([href,label,Icon])=><Link key={href} href={href} className="grid place-items-center gap-1 py-1 text-center text-[10px] font-semibold text-[#40564b]"><Icon size={18}/>{label}</Link>)}</nav></div></div>
+}

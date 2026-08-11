@@ -1,0 +1,5 @@
+import Link from 'next/link'
+import { EmptyPanel, PageHeader } from '@/components/module-ui'
+import { requirePatientPortal } from '@/lib/auth'
+
+export default async function PortalDocuments(){const {supabase,organizationId,patientId}=await requirePatientPortal();const {data:documents}=await supabase.from('documents').select('*').eq('organization_id',organizationId).eq('patient_id',patientId).order('issued_at',{ascending:false});return <div><PageHeader eyebrow="Arquivos" title="Documentos liberados" description="Downloads usam links privados temporários."/><div className="mt-7 grid gap-3">{documents?.length?documents.map(document=><article className="np-card flex flex-wrap items-center justify-between gap-4 p-5" key={document.id}><div><h2 className="font-bold">{document.title}</h2><p className="mt-1 text-sm text-[#607269]">{document.type} · emitido em {new Date(document.issued_at).toLocaleDateString('pt-BR')}</p></div><Link className="np-button" href={`/portal/documentos/${document.id}/download`}>Baixar PDF</Link></article>):<EmptyPanel>Nenhum documento foi liberado para você.</EmptyPanel>}</div></div>}

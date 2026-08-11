@@ -1,0 +1,12 @@
+import { NextResponse } from 'next/server'
+import { requirePermission } from '@/lib/auth'
+
+export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const { supabase, organizationId } = await requirePermission('finance.read')
+  const { data: receipt } = await supabase.from('receipts').select('private_file_path').eq('organization_id', organizationId).eq('id', id).maybeSingle()
+  if (!receipt) return new NextResponse('Recibo não encontrado.', { status: 404 })
+  const { data, error } = await supabase.storage.from('patient-documents').createSignedUrl(receipt.private_file_path, 60, { download: true })
+  if (error || !data?.signedUrl) return new NextResponse('Não foi possível preparar o download.', { status: 502 })
+  return NextResponse.redirect(data.signedUrl)
+}

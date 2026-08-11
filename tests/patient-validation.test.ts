@@ -1,0 +1,3 @@
+import { describe, expect, it } from 'vitest'; import { patientSchema } from '@/lib/validation/patient'
+const base={name:'Paciente Teste',social_name:'',birth_date:'',cpf:'',phone:'',whatsapp:'',email:'',profession:'',objective:'',source:'',referral:'',admin_notes:'',status:'ativo',emergency_name:'',emergency_relation:'',emergency_phone:''}
+describe('patientSchema',()=>{it('aceita cadastro mínimo válido',()=>expect(patientSchema.parse(base).name).toBe('Paciente Teste'));it('rejeita nome curto',()=>expect(()=>patientSchema.parse({...base,name:'A'})).toThrow());it('rejeita email inválido',()=>expect(()=>patientSchema.parse({...base,email:'invalido'})).toThrow())})
