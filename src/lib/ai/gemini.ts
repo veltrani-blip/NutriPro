@@ -41,6 +41,23 @@ export class GeminiGenerationError extends Error {
   }
 }
 
+async function resolveAvailableModel(apiKey: string, configuredModel?: string) {
+  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100', {
+    headers: { 'x-goog-api-key': apiKey }, signal: AbortSignal.timeout(15_000), cache: 'no-store',
+  })
+  if (!response.ok) {
+    const code = response.status === 401 || response.status === 403 ? 'invalid_key' : response.status === 429 ? 'quota' : 'provider'
+    throw new GeminiGenerationError(code, `Não foi possível consultar os modelos Gemini (${response.status}).`)
+  }
+  const payload = await response.json() as { models?: { name?: string; supportedGenerationMethods?: string[] }[] }
+  const available = new Set((payload.models ?? []).filter((model) => model.supportedGenerationMethods?.includes('generateContent')).map((model) => model.name?.replace(/^models\//, '')).filter((name): name is string => Boolean(name)))
+  if (configuredModel && available.has(configuredModel)) return configuredModel
+  const preferred = ['gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-3.5-flash','gemini-2.5-flash','gemini-3-flash-preview']
+  const selected = preferred.find((model) => available.has(model)) || [...available].find((model) => /gemini.*flash/i.test(model))
+  if (!selected) throw new GeminiGenerationError('model', 'Nenhum modelo Gemini com generateContent está disponível para esta chave.')
+  return selected
+}
+
 const responseSchema = {
   type: 'object', required: ['title','rationale','assumptions','safetyFlags','reviewChecklist','meals'],
   properties: {
@@ -63,7 +80,7 @@ const responseSchema = {
 export async function generateNutritionPlanDraft(input: Record<string, unknown>) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new GeminiGenerationError('missing_key', 'GEMINI_API_KEY não configurada no servidor.')
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite'
+  const model = await resolveAvailableModel(apiKey, process.env.GEMINI_MODEL)
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST', signal: AbortSignal.timeout(45_000),
     headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },

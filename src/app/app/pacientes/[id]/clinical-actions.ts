@@ -172,7 +172,7 @@ export async function generateNutritionPlanWithAi(patientId: string, formData: F
       missing_key: 'A GEMINI_API_KEY não está disponível. Salve-a no .env.local e reinicie o servidor.',
       invalid_key: 'O Gemini recusou a chave. Confirme se a chave nova está correta e se a API Gemini está ativada.',
       quota: 'A cota gratuita do Gemini foi atingida. Aguarde a renovação da cota ou use outra chave com saldo.',
-      model: 'O modelo configurado não está disponível para esta chave. Use GEMINI_MODEL=gemini-2.5-flash-lite.',
+      model: 'Nenhum modelo de texto do Gemini foi liberado para esta chave. Verifique o projeto no Google AI Studio.',
       invalid_request: 'O Gemini recusou o formato da solicitação. Veja o detalhe seguro no terminal do servidor.',
       empty: 'O Gemini respondeu sem gerar conteúdo. Tente novamente em alguns instantes.',
       invalid_response: 'O Gemini gerou uma resposta incompleta. Tente novamente; nenhum plano parcial foi salvo.',
