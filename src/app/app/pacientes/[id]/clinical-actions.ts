@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { calculateBmi, calculateWaistHeightRatio, calculateWaistHipRatio } from '@/lib/calculations/anthropometry'
 import { requirePermission } from '@/lib/auth'
 import { uploadPrivateFile, validatePrivateFile } from '@/lib/storage'
+import { generateNutritionPlanDraft } from '@/lib/ai/gemini'
 
 const optional = (value: FormDataEntryValue | null) => String(value ?? '').trim() || null
 const num = (value: FormDataEntryValue | null) => { const parsed = Number(value); return value === null || value === '' || !Number.isFinite(parsed) ? null : parsed }
@@ -133,6 +134,77 @@ export async function createNutritionPlan(patientId: string, formData: FormData)
   if (error) redirect(modulePath(patientId, 'plano-alimentar', 'error', 'Não foi possível criar o plano.'))
   revalidatePath(`/app/pacientes/${patientId}/plano-alimentar`)
   redirect(modulePath(patientId, 'plano-alimentar', 'message', 'Rascunho criado. Abra-o no editor de planos.'))
+}
+
+export async function generateNutritionPlanWithAi(patientId: string, formData: FormData) {
+  const { user, supabase, organizationId } = await requirePermission('clinical.write')
+  if (formData.get('professional_review') !== 'on') redirect(modulePath(patientId, 'plano-alimentar', 'error', 'Confirme a revisão profissional obrigatória.'))
+  const routine = z.string().trim().min(10).max(4000).parse(formData.get('routine'))
+  const goal = z.string().trim().min(3).max(1000).parse(formData.get('goal'))
+  const mealsCount = z.coerce.number().int().min(2).max(8).parse(formData.get('meals_count'))
+  const age = z.coerce.number().int().min(12).max(100).parse(formData.get('age'))
+  const heightCm = z.coerce.number().min(100).max(230).parse(formData.get('height_cm'))
+  const weightKg = z.coerce.number().min(25).max(350).parse(formData.get('weight_kg'))
+  const trainingDays = z.coerce.number().int().min(0).max(7).parse(formData.get('training_days'))
+  const workDays = z.coerce.number().int().min(0).max(7).parse(formData.get('work_days'))
+  const [{ data: patient }, { data: anamnesis }] = await Promise.all([
+    supabase.from('patients').select('objective,birth_date').eq('organization_id', organizationId).eq('id', patientId).single(),
+    supabase.from('anamneses').select('objective,diagnosed_conditions,medications,allergies,intolerances,restrictions,preferences,budget_notes,regional_availability,physical_activity,hydration,sleep').eq('organization_id', organizationId).eq('patient_id', patientId).is('deleted_at', null).order('recorded_at', { ascending: false }).limit(1).maybeSingle(),
+  ])
+  if (!patient) redirect(modulePath(patientId, 'plano-alimentar', 'error', 'Paciente não encontrado.'))
+  const bmi = Number((weightKg / ((heightCm / 100) ** 2)).toFixed(1))
+  const input = {
+    purpose: 'Gerar rascunho de plano alimentar para revisão por nutricionista', goal,
+    anthropometry: { ageYears: age, heightCm, weightKg, bmi },
+    weeklySchedule: { trainingDays, workDays },
+    routine, desiredMeals: mealsCount, budget: optional(formData.get('budget')) || anamnesis?.budget_notes,
+    cookingAccess: optional(formData.get('cooking_access')), professionalNotes: optional(formData.get('professional_notes')),
+    clinicalContext: { objective: anamnesis?.objective || patient.objective, diagnosedConditions: anamnesis?.diagnosed_conditions,
+      medications: anamnesis?.medications, allergies: anamnesis?.allergies, intolerances: anamnesis?.intolerances,
+      restrictions: anamnesis?.restrictions, preferences: anamnesis?.preferences, regionalAvailability: anamnesis?.regional_availability,
+      physicalActivity: anamnesis?.physical_activity, hydration: anamnesis?.hydration, sleep: anamnesis?.sleep },
+  }
+  let generated: Awaited<ReturnType<typeof generateNutritionPlanDraft>>
+  try { generated = await generateNutritionPlanDraft(input) }
+  catch (error) {
+    const message = error instanceof Error && error.message === 'GEMINI_API_KEY_NOT_CONFIGURED'
+      ? 'A chave GEMINI_API_KEY não está disponível neste servidor. Reinicie o localhost após salvar o .env.local.'
+      : 'A IA não conseguiu gerar o rascunho agora. Nenhum plano incompleto foi salvo.'
+    redirect(modulePath(patientId, 'plano-alimentar', 'error', message))
+  }
+  const notes = [`RASCUNHO GERADO POR IA — revisão profissional obrigatória.`, `Justificativa: ${generated.plan.rationale}`,
+    generated.plan.assumptions.length ? `Premissas:\n- ${generated.plan.assumptions.join('\n- ')}` : '',
+    generated.plan.safetyFlags.length ? `Alertas:\n- ${generated.plan.safetyFlags.join('\n- ')}` : '',
+    `Checklist de revisão:\n- ${generated.plan.reviewChecklist.join('\n- ')}`].filter(Boolean).join('\n\n')
+  const { data: plan, error: planError } = await supabase.from('nutrition_plans').insert({ organization_id: organizationId, patient_id: patientId,
+    professional_user_id: user.id, title: generated.plan.title, plan_type: 'daily', notes, status: 'draft', template_name: `IA · ${generated.model}` }).select('id').single()
+  if (planError || !plan) redirect(modulePath(patientId, 'plano-alimentar', 'error', 'O rascunho foi gerado, mas não pôde ser salvo.'))
+  try {
+    for (const [mealIndex, meal] of generated.plan.meals.entries()) {
+      const { data: savedMeal, error: mealError } = await supabase.from('meals').insert({ organization_id: organizationId, plan_id: plan.id,
+        title: meal.title, meal_time: meal.time, notes: meal.notes, sort_order: mealIndex }).select('id').single()
+      if (mealError || !savedMeal) throw new Error('meal')
+      for (const [itemIndex, item] of meal.items.entries()) {
+        const { data: savedItem, error: itemError } = await supabase.from('meal_items').insert({ organization_id: organizationId, meal_id: savedMeal.id,
+          description: item.description, quantity: item.quantity, unit: item.unit, notes: item.notes, sort_order: itemIndex }).select('id').single()
+        if (itemError || !savedItem) throw new Error('item')
+        if (item.substitutions.length) {
+          const { error: substitutionError } = await supabase.from('substitutions').insert(item.substitutions.map((replacement, index) => ({
+            organization_id: organizationId, meal_item_id: savedItem.id, description: replacement.description,
+            quantity: replacement.quantity, unit: replacement.unit, notes: replacement.notes, sort_order: index,
+          })))
+          if (substitutionError) throw new Error('substitution')
+        }
+      }
+    }
+  } catch {
+    await supabase.from('nutrition_plans').delete().eq('organization_id', organizationId).eq('id', plan.id)
+    redirect(modulePath(patientId, 'plano-alimentar', 'error', 'Não foi possível salvar todas as refeições; o rascunho parcial foi descartado.'))
+  }
+  await supabase.from('audit_logs').insert({ organization_id: organizationId, actor_user_id: user.id, action: 'ai.plan_draft_generated', entity: 'nutrition_plan', entity_id: plan.id,
+    metadata: { patient_id: patientId, model: generated.model, prompt_version: 'nutripro-plan-v1', meal_count: generated.plan.meals.length, deidentified: true } })
+  revalidatePath(`/app/pacientes/${patientId}/plano-alimentar`); revalidatePath(`/app/planos/${plan.id}`)
+  redirect(`/app/planos/${plan.id}?message=${encodeURIComponent('Rascunho criado pela IA. Revise alertas, quantidades e substituições antes de publicar.')}`)
 }
 
 export async function createPatientPayment(patientId: string, formData: FormData) {

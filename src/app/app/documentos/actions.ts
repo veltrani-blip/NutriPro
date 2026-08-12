@@ -6,8 +6,38 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/auth'
 import { buildClinicalPdf, buildReceiptPdf } from '@/lib/pdf'
+import { uploadPrivateFile, validatePrivateFile } from '@/lib/storage'
 
 const go = (path: string, key: 'message'|'error', message: string): never => redirect(`${path}?${key}=${encodeURIComponent(message)}`)
+
+export async function uploadPatientDocument(formData: FormData) {
+  const { supabase, organizationId, user } = await requirePermission('documents.write')
+  const patientId = z.string().uuid().parse(formData.get('patient_id'))
+  const title = z.string().trim().min(2).max(180).parse(formData.get('title'))
+  const type = z.enum(['orientacao','plano_alimentar','relatorio','declaracao','outro']).parse(formData.get('type'))
+  const file = formData.get('file')
+  if (!(file instanceof File)) go('/app/documentos','error','Selecione um PDF ou imagem.')
+  let filePath: string
+  try {
+    const valid = await validatePrivateFile(file, { maxBytes: 25 * 1024 * 1024, allowedTypes: ['application/pdf','image/jpeg','image/png','image/webp'] })
+    if (!valid) throw new Error('empty')
+    filePath = await uploadPrivateFile(supabase, 'patient-documents', organizationId, patientId, valid)
+  } catch { go('/app/documentos','error','Arquivo inválido. Use PDF, JPG, PNG ou WebP de até 25 MB.') }
+  const bytes = Buffer.from(await file.arrayBuffer())
+  const { data: document, error } = await supabase.from('documents').insert({
+    organization_id: organizationId, patient_id: patientId, type, title,
+    private_file_path: filePath!, mime_type: file.type, checksum: createHash('sha256').update(bytes).digest('hex'),
+    source_version: 'upload-v1', signature_applied: false, created_by: user.id,
+    metadata: { original_name: file.name.slice(0, 240), size_bytes: file.size, source: 'upload' },
+  }).select('id').single()
+  if (error || !document) { await supabase.storage.from('patient-documents').remove([filePath!]); go('/app/documentos','error','O arquivo foi validado, mas não pôde ser registrado.') }
+  if (formData.get('release_to_patient') === 'on') {
+    const { error: releaseError } = await supabase.from('document_releases').insert({ organization_id: organizationId, document_id: document.id, patient_id: patientId, released_by: user.id })
+    if (releaseError) go('/app/documentos','error','Arquivo salvo, mas a liberação ao portal falhou.')
+  }
+  revalidatePath('/app/documentos'); revalidatePath(`/app/pacientes/${patientId}/arquivos`)
+  go('/app/documentos','message','Arquivo privado enviado e registrado com checksum.')
+}
 
 export async function issueDocument(formData: FormData) {
   const { supabase, organizationId, user } = await requirePermission('documents.write')

@@ -7,11 +7,33 @@ import { z } from 'zod'
 import { requirePermission } from '@/lib/auth'
 import { scaleNutrients, sumNutrients, type Nutrients } from '@/lib/calculations/nutrition'
 import { createGatewayCharge } from '@/lib/integrations/payments'
+import { starterGuidance, starterRecipes, starterTemplates } from '@/lib/nutrition/starter-content'
 
 const text = (value: FormDataEntryValue | null) => String(value ?? '').trim() || null
 const number = (value: FormDataEntryValue | null) => { const parsed = Number(value); return value === null || value === '' || !Number.isFinite(parsed) ? null : parsed }
 const money = (value: FormDataEntryValue | null) => Math.round(z.coerce.number().min(0).parse(value) * 100)
 const go = (path: string, key: 'message' | 'error', value: string): never => redirect(`${path}?${key}=${encodeURIComponent(value)}`)
+
+export async function installStarterLibrary() {
+  const { supabase, organizationId, user } = await requirePermission('clinical.write')
+  const [{ data: guidance }, { data: recipes }, { data: templates }] = await Promise.all([
+    supabase.from('guidance_library').select('title').eq('organization_id', organizationId).is('deleted_at', null),
+    supabase.from('recipes').select('title').eq('organization_id', organizationId).is('deleted_at', null),
+    supabase.from('nutrition_plan_templates').select('name').eq('organization_id', organizationId).eq('owner_user_id', user.id),
+  ])
+  const knownGuidance = new Set(guidance?.map((item) => item.title)); const knownRecipes = new Set(recipes?.map((item) => item.title)); const knownTemplates = new Set(templates?.map((item) => item.name))
+  const guidanceRows = starterGuidance.filter((item) => !knownGuidance.has(item.title)).map((item) => ({ ...item, organization_id: organizationId, created_by: user.id }))
+  const recipeRows = starterRecipes.filter((item) => !knownRecipes.has(item.title)).map((item) => ({ ...item, organization_id: organizationId, created_by: user.id }))
+  const templateRows = starterTemplates.filter(([name]) => !knownTemplates.has(name)).map(([name, description, meals]) => ({ organization_id: organizationId, owner_user_id: user.id, name, description, template_data: { version: 1, editable: true, meals: meals.map((title, sort_order) => ({ title, sort_order, items: [] })) } }))
+  const results = await Promise.all([
+    guidanceRows.length ? supabase.from('guidance_library').insert(guidanceRows) : Promise.resolve({ error: null }),
+    recipeRows.length ? supabase.from('recipes').insert(recipeRows) : Promise.resolve({ error: null }),
+    templateRows.length ? supabase.from('nutrition_plan_templates').insert(templateRows) : Promise.resolve({ error: null }),
+  ])
+  if (results.some((result) => result.error)) go('/app/planos', 'error', 'Parte da biblioteca não pôde ser instalada.')
+  revalidatePath('/app/planos'); revalidatePath('/app/receitas'); revalidatePath('/app/orientacoes')
+  go('/app/planos', 'message', 'Biblioteca inicial instalada: modelos, receitas e orientações editáveis.')
+}
 
 export async function createFood(formData: FormData) {
   const { supabase, organizationId } = await requirePermission('clinical.write')
