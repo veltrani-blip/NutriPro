@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
 
 const administrative = [['','Visão geral'],['consultas','Consultas']] as const
-const clinical = [['prontuario','Prontuário'],['anamnese','Anamnese'],['avaliacoes','Avaliações'],['antropometria','Antropometria'],['evolucao','Evolução'],['exames','Exames'],['plano-alimentar','Plano alimentar'],['receitas','Receitas'],['orientacoes','Orientações']] as const
-const documents = [['documentos','Documentos'],['questionarios','Questionários'],['arquivos','Arquivos']] as const
+const clinical = [['plano-alimentar','✨ Dieta com IA'],['exames','Anexar exames'],['prontuario','Prontuário'],['anamnese','Anamnese'],['avaliacoes','Avaliações'],['antropometria','Antropometria'],['evolucao','Evolução'],['receitas','Receitas'],['orientacoes','Orientações']] as const
+const documents = [['documentos','Documentos'],['arquivos','PDFs e fotos'],['questionarios','Questionários']] as const
 const finance = [['financeiro','Financeiro']] as const
 const history = [['historico','Histórico']] as const
 
@@ -19,5 +19,5 @@ export default async function PatientLayout({ children, params }: { children: Re
   ])
   if (!patient) notFound()
   const tabs = [...administrative, ...(clinicalAllowed.data === true ? clinical : []), ...(documentsAllowed.data === true ? documents : []), ...(financeAllowed.data === true ? finance : []), ...history]
-  return <div className="mx-auto max-w-7xl pb-20"><header className="mb-6"><Link className="text-sm font-bold text-[#167451]" href="/app/pacientes">← Pacientes</Link><div className="mt-4 flex flex-wrap items-center gap-3"><h1 className="text-3xl font-black">{patient.social_name || patient.name}</h1><span className="np-badge">{patient.status}</span></div><nav className="mt-5 flex gap-2 overflow-x-auto pb-2" aria-label="Seções do paciente">{tabs.map(([path,label]) => <Link className="shrink-0 rounded-xl border border-[#dfe9e3] bg-white px-3 py-2 text-sm font-semibold hover:border-[#167451]" href={path ? `/app/pacientes/${id}/${path}` : `/app/pacientes/${id}`} key={path}>{label}</Link>)}</nav></header>{children}</div>
+  return <div className="mx-auto max-w-7xl pb-20"><header className="mb-6"><Link className="text-sm font-bold text-[#167451]" href="/app/pacientes">← Pacientes</Link><div className="mt-4 flex flex-wrap items-center gap-3"><h1 className="text-3xl font-black">{patient.social_name || patient.name}</h1><span className="np-badge">{patient.status}</span></div><nav className="mt-5 flex flex-wrap gap-2 pb-2" aria-label="Seções do paciente">{tabs.map(([path,label]) => <Link className="shrink-0 rounded-xl border border-[#dfe9e3] bg-white px-3 py-2 text-sm font-semibold hover:border-[#167451]" href={path ? `/app/pacientes/${id}/${path}` : `/app/pacientes/${id}`} key={path}>{label}</Link>)}</nav></header>{children}</div>
 }

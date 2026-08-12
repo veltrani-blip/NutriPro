@@ -1,10 +1,10 @@
 import Link from 'next/link'
-import { BarChart3, Bell, BookOpen, CalendarDays, CheckSquare, ClipboardList, FileText, LayoutDashboard, LogOut, Search, Settings, Soup, Users, Utensils, WalletCards } from 'lucide-react'
+import { BarChart3, Bell, BookOpen, CalendarDays, CheckSquare, ClipboardList, FileText, LayoutDashboard, LogOut, Search, Settings, Soup, Sparkles, Users, Utensils, WalletCards } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { signOut } from '@/app/actions'
 
 const nav = [
-  ['/app/dashboard','Visão geral',LayoutDashboard,null], ['/app/agenda','Agenda',CalendarDays,'agenda.read'], ['/app/pacientes','Pacientes',Users,'patient.read'],
+  ['/app/dashboard','Visão geral',LayoutDashboard,null], ['/app/ia','NutriPro IA',Sparkles,'clinical.read'], ['/app/agenda','Agenda',CalendarDays,'agenda.read'], ['/app/pacientes','Pacientes',Users,'patient.read'],
   ['/app/planos','Planos',ClipboardList,'clinical.read'], ['/app/alimentos','Alimentos',Soup,'clinical.read'], ['/app/receitas','Receitas',Utensils,'clinical.read'],
   ['/app/orientacoes','Orientações',BookOpen,'clinical.read'], ['/app/questionarios','Questionários',FileText,'clinical.read'], ['/app/checkins','Check-ins',ClipboardList,'clinical.read'], ['/app/documentos','Documentos',FileText,'documents.read'],
   ['/app/financeiro','Financeiro',WalletCards,'finance.read'], ['/app/relatorios','Relatórios',BarChart3,'reports.read'], ['/app/crm','CRM',Users,'patient.read'], ['/app/tarefas','Tarefas',CheckSquare,'patient.read'], ['/app/notificacoes','Notificações',Bell,null], ['/app/configuracoes','Configurações',Settings,null],
