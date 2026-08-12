@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { calculateBmi, calculateWaistHeightRatio, calculateWaistHipRatio } from '@/lib/calculations/anthropometry'
 import { requirePermission } from '@/lib/auth'
 import { uploadPrivateFile, validatePrivateFile } from '@/lib/storage'
-import { generateNutritionPlanDraft } from '@/lib/ai/gemini'
+import { GeminiGenerationError, generateNutritionPlanDraft } from '@/lib/ai/gemini'
 
 const optional = (value: FormDataEntryValue | null) => String(value ?? '').trim() || null
 const num = (value: FormDataEntryValue | null) => { const parsed = Number(value); return value === null || value === '' || !Number.isFinite(parsed) ? null : parsed }
@@ -167,9 +167,17 @@ export async function generateNutritionPlanWithAi(patientId: string, formData: F
   let generated: Awaited<ReturnType<typeof generateNutritionPlanDraft>>
   try { generated = await generateNutritionPlanDraft(input) }
   catch (error) {
-    const message = error instanceof Error && error.message === 'GEMINI_API_KEY_NOT_CONFIGURED'
-      ? 'A chave GEMINI_API_KEY não está disponível neste servidor. Reinicie o localhost após salvar o .env.local.'
-      : 'A IA não conseguiu gerar o rascunho agora. Nenhum plano incompleto foi salvo.'
+    console.error('[nutrition-plan:ai] generation failed', { patientId, error: error instanceof Error ? error.message : String(error) })
+    const messages: Record<string,string> = {
+      missing_key: 'A GEMINI_API_KEY não está disponível. Salve-a no .env.local e reinicie o servidor.',
+      invalid_key: 'O Gemini recusou a chave. Confirme se a chave nova está correta e se a API Gemini está ativada.',
+      quota: 'A cota gratuita do Gemini foi atingida. Aguarde a renovação da cota ou use outra chave com saldo.',
+      model: 'O modelo configurado não está disponível para esta chave. Use GEMINI_MODEL=gemini-2.5-flash-lite.',
+      invalid_request: 'O Gemini recusou o formato da solicitação. Veja o detalhe seguro no terminal do servidor.',
+      empty: 'O Gemini respondeu sem gerar conteúdo. Tente novamente em alguns instantes.',
+      invalid_response: 'O Gemini gerou uma resposta incompleta. Tente novamente; nenhum plano parcial foi salvo.',
+    }
+    const message = error instanceof GeminiGenerationError ? messages[error.code] || 'O serviço Gemini está indisponível no momento.' : 'A IA não conseguiu gerar o rascunho agora. Nenhum plano incompleto foi salvo.'
     redirect(modulePath(patientId, 'plano-alimentar', 'error', message))
   }
   const notes = [`RASCUNHO GERADO POR IA — revisão profissional obrigatória.`, `Justificativa: ${generated.plan.rationale}`,

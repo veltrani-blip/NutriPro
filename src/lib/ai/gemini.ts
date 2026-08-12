@@ -34,6 +34,13 @@ export const generatedPlanSchema = z.object({
 
 export type GeneratedPlan = z.infer<typeof generatedPlanSchema>
 
+export class GeminiGenerationError extends Error {
+  constructor(public readonly code: 'missing_key'|'invalid_request'|'invalid_key'|'quota'|'model'|'provider'|'empty'|'invalid_response', message: string) {
+    super(message)
+    this.name = 'GeminiGenerationError'
+  }
+}
+
 const responseSchema = {
   type: 'object', required: ['title','rationale','assumptions','safetyFlags','reviewChecklist','meals'],
   properties: {
@@ -55,7 +62,7 @@ const responseSchema = {
 
 export async function generateNutritionPlanDraft(input: Record<string, unknown>) {
   const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) throw new Error('GEMINI_API_KEY_NOT_CONFIGURED')
+  if (!apiKey) throw new GeminiGenerationError('missing_key', 'GEMINI_API_KEY não configurada no servidor.')
   const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite'
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST', signal: AbortSignal.timeout(45_000),
@@ -66,9 +73,18 @@ export async function generateNutritionPlanDraft(input: Record<string, unknown>)
       generationConfig: { temperature: 0.35, responseMimeType: 'application/json', responseJsonSchema: responseSchema },
     }),
   })
-  if (!response.ok) throw new Error(`GEMINI_REQUEST_FAILED_${response.status}`)
+  if (!response.ok) {
+    const providerBody = (await response.text()).slice(0, 1200).replaceAll(apiKey, '[redacted]')
+    console.error('[gemini:generate-plan] provider rejected request', { status: response.status, model, body: providerBody })
+    const code = response.status === 400 ? 'invalid_request' : response.status === 401 || response.status === 403 ? 'invalid_key' : response.status === 404 ? 'model' : response.status === 429 ? 'quota' : 'provider'
+    throw new GeminiGenerationError(code, `Gemini recusou a solicitação (${response.status}).`)
+  }
   const payload = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] }
   const json = payload.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!json) throw new Error('GEMINI_EMPTY_RESPONSE')
-  return { plan: generatedPlanSchema.parse(JSON.parse(json)), model }
+  if (!json) throw new GeminiGenerationError('empty', 'O Gemini respondeu sem conteúdo.')
+  try { return { plan: generatedPlanSchema.parse(JSON.parse(json)), model } }
+  catch (error) {
+    console.error('[gemini:generate-plan] invalid structured response', { model, error: error instanceof Error ? error.message : String(error) })
+    throw new GeminiGenerationError('invalid_response', 'O Gemini respondeu fora do formato esperado.')
+  }
 }
